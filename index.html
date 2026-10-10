@@ -81,10 +81,21 @@
     }
     msg.hidden = true;
     var bar = document.getElementById('bar'); bar.hidden = false;
-    document.getElementById('save').onclick = function () {
-      var blob = new Blob([bytes], { type: data.mime });
+    // LINEの中の画面ではダウンロードが効かないため、①共有メニュー（「ファイルに保存」など）②Safariで開き直す、の順に試す
+    document.getElementById('save').onclick = async function () {
+      var name = data.name || (data.title + '.pdf');
+      var file = new File([bytes], name, { type: data.mime });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: data.title }); return; }
+        catch (e) { if (e && e.name === 'AbortError') return; }   // 自分で閉じたときは何もしない
+      }
+      if (liff.isInClient()) {
+        show('Safariで開き直します。開いた画面の「端末に保存する」を押してください。');
+        liff.openWindow({ url: location.href, external: true });
+        return;
+      }
       var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob); a.download = data.name || (data.title + '.pdf');
+      a.href = URL.createObjectURL(file); a.download = name;
       document.body.appendChild(a); a.click(); a.remove();
     };
   }
