@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<meta name="referrer" content="no-referrer">
+<meta name="apple-mobile-web-app-title" content="控え送信">
+<title>控え送信</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg: #fff; --text: #222; --sub: #666; --line: #ddd; --accent: #c2185b; }
+  body { font-family: -apple-system, "Hiragino Sans", sans-serif; margin: 16px; background: var(--bg); color: var(--text); }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .note { color: var(--sub); font-size: 13px; margin-bottom: 16px; }
+  .row { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .top { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .karte { font-weight: bold; font-size: 17px; }
+  .state { font-size: 13px; padding: 2px 8px; border-radius: 10px; background: #eee; white-space: nowrap; }
+  .s-ok { background: #e3f4e6; color: #1b6e2a; }
+  .s-wait { background: #fff1d6; color: #8a5a00; }
+  .s-ng { background: #fde2e2; color: #a01818; }
+  .qr { margin-top: 10px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .qr p { margin: 0; font-size: 14px; line-height: 1.6; }
+  .qrbox { background: #fff; padding: 8px; }
+  .code { font-family: monospace; font-size: 18px; letter-spacing: 2px; }
+  .qrbtn { margin-top: 8px; padding: 10px 16px; font-size: 15px; border: 1px solid var(--accent); color: var(--accent); background: #fff; border-radius: 8px; }
+  #reload { float: right; padding: 6px 12px; font-size: 14px; border: 1px solid var(--line); background: #fff; border-radius: 8px; }
+</style>
+</head>
+<body>
+<button id="reload">更新</button>
+<h1>控え送信</h1>
+<div class="note">eノートから送った控えの状況です（新しい順・30件）。30秒ごとに自動で更新します。</div>
+<div id="list">読み込み中…</div>
+<script>
+  var API = 'https://script.google.com/macros/s/AKfycbxoIxClrjA625NG6aCJlyW0J3EpiYw_7k1k9SoKPVoEoNen9SQQMqBGCyxSZ77mCcoQ/exec';
+  // 合言葉はアドレスの # の後ろに置く（# 以降はどのサーバーにも送られない）
+  var KEY = new URLSearchParams(location.hash.slice(1)).get('k') || '';
+  var OA = '', openCode = '', lastRows = [];
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function fail(t) { document.getElementById('list').innerHTML = '<p>' + esc(t) + '</p>'; }
+  function render(rows) {
+    lastRows = rows;
+    if (!rows || !rows.length) { fail('まだ記録がありません。'); return; }
+    document.getElementById('list').innerHTML = rows.map(function (r) {
+      var cls = r.state === '送信済み' ? 's-ok' : (r.state === '未登録' ? 's-wait' : (/失敗|要確認/.test(r.state) ? 's-ng' : ''));
+      // 取り違え防止：QRは押した1件だけ出す（一覧に並べると別の患者さんのQRを読まれうる）
+      var qr = !r.code ? '' : (openCode === r.code
+        ? '<div class="qr"><div class="qrbox" data-code="' + esc(r.code) + '"></div><p>No.' + esc(r.karte) + ' の患者さんご本人に、スマホのカメラでこのQRを読み取り、<br>LINEで開いた文面をそのまま送信してもらってください。<br>登録と同時に控えが届きます。<br>コード：<span class="code">' + esc(r.code) + '</span></p></div>'
+          + '<button class="qrbtn" data-code="">QRを閉じる</button>'
+        : '<button class="qrbtn" data-code="' + esc(r.code) + '">この患者さんのQRを出す</button>');
+      return '<div class="row"><div class="top"><div><span class="karte">' + (r.karte ? 'No.' + esc(r.karte) : '（番号なし）') + '</span>　' + esc(r.title) + '</div>'
+        + '<div><span class="state ' + cls + '">' + esc(r.state) + '</span>　<small>' + esc(r.at) + '</small></div></div>' + qr + '</div>';
+    }).join('');
+    document.querySelectorAll('.qrbox').forEach(function (el) {
+      var url = 'https://line.me/R/oaMessage/' + encodeURIComponent(OA) + '/?' + encodeURIComponent('登録コード ' + el.dataset.code);
+      new QRCode(el, { text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
+    });
+    document.querySelectorAll('.qrbtn').forEach(function (b) {
+      b.onclick = function () { openCode = b.dataset.code; render(lastRows); };
+    });
+  }
+  async function load() {
+    if (!KEY) { fail('合言葉のついたアドレスから開いてください。'); return; }
+    try {
+      var res = await fetch(API + '?action=staff_rows&k=' + encodeURIComponent(KEY), { credentials: 'omit' });
+      var d = await res.json();
+      if (!d.ok) { fail(d.error === 'key' ? '合言葉が違います。事務スタッフに確認してください。' : '読み込めませんでした。'); return; }
+      OA = d.oa;
+      render(d.rows);
+    } catch (e) { fail('読み込めませんでした。通信状態を確認して「更新」を押してください。'); }
+  }
+  document.getElementById('reload').onclick = load;
+  load();
+  setInterval(load, 30000);
+</script>
+</body>
+</html>
