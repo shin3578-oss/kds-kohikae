@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>書類の控え｜大崎オーバルコート歯科・矯正歯科室</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root { --bg: #f6f4f5; --card: #fff; --text: #222; --sub: #666; --accent: #c2185b; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161416; --card: #222; --text: #eee; --sub: #aaa; } }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: -apple-system, "Hiragino Sans", sans-serif; }
+  header { padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--sub); font-size: 13px; }
+  #msg { padding: 24px 16px; text-align: center; line-height: 1.7; }
+  #pages { padding: 0 8px 16px; }
+  #pages canvas, #pages img { display: block; width: 100%; height: auto; margin: 0 auto 10px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.15); }
+  .bar { padding: 0 16px 24px; }
+  button { width: 100%; padding: 14px; font-size: 16px; border: 0; border-radius: 10px; background: var(--accent); color: #fff; }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 8px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">書類の控え</h1>
+  <div class="sub">大崎オーバルコート歯科・矯正歯科室</div>
+</header>
+<div id="msg">読み込んでいます…</div>
+<div id="pages"></div>
+<div class="bar" id="bar" hidden>
+  <button id="save">端末に保存する</button>
+  <div class="hint">保存がうまくいかないときは、画面を長押しして画像を保存するか、スクリーンショットで残してください。</div>
+</div>
+<script>
+  var LIFF_ID = '2011957775-QRva3CAy';
+  var API = 'https://script.google.com/macros/s/AKfycby6U8bV6n3gNRDaDISkuyq48Y9gwLMvTq-TC5VgAdoOOFEo4Zn-hnhB-f0cPPAsQ5XL/exec';
+  var msg = document.getElementById('msg');
+
+  function show(text) { msg.hidden = false; msg.textContent = text; }
+
+  function b64ToBytes(b64) {
+    var bin = atob(b64), out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  async function main() {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login({ redirectUri: location.href }); return; }
+    var d = new URLSearchParams(location.search).get('d');
+    if (!d) { show('書類が指定されていません。LINEのメッセージのボタンから開いてください。'); return; }
+    var res = await fetch(API + '?action=doc&d=' + encodeURIComponent(d) + '&t=' + encodeURIComponent(liff.getIDToken()));
+    var data = await res.json();
+    if (!data.ok) {
+      show(data.error === 'forbidden'
+        ? 'この控えは、お受け取りになったご本人のLINEでのみ開けます。'
+        : '控えを開けませんでした。お手数ですが医院までお問い合わせください。');
+      return;
+    }
+    document.getElementById('title').textContent = data.title + '（' + data.date.replace(/-/g, '/') + '）';
+    var bytes = b64ToBytes(data.b64);
+    var box = document.getElementById('pages');
+    if (data.mime === 'application/pdf') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      var pdf = await pdfjsLib.getDocument({ data: bytes.slice() }).promise;
+      for (var n = 1; n <= pdf.numPages; n++) {
+        var page = await pdf.getPage(n);
+        var vp = page.getViewport({ scale: 2 });
+        var cv = document.createElement('canvas');
+        cv.width = vp.width; cv.height = vp.height;
+        await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+        // 長押し保存できるよう画像に置き換える
+        var img = new Image(); img.src = cv.toDataURL('image/jpeg', 0.9); img.alt = data.title + ' ' + n + 'ページ';
+        box.appendChild(img);
+      }
+    } else {
+      var im = new Image(); im.src = 'data:' + data.mime + ';base64,' + data.b64; im.alt = data.title;
+      box.appendChild(im);
+    }
+    msg.hidden = true;
+    var bar = document.getElementById('bar'); bar.hidden = false;
+    document.getElementById('save').onclick = function () {
+      var blob = new Blob([bytes], { type: data.mime });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = data.name || (data.title + '.pdf');
+      document.body.appendChild(a); a.click(); a.remove();
+    };
+  }
+  main().catch(function (e) { show('控えを開けませんでした。お手数ですが医院までお問い合わせください。（' + (e && e.message || e) + '）'); });
+</script>
+</body>
+</html>
