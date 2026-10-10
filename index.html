@@ -56,10 +56,16 @@
     if (!data.ok) {
       show(data.error === 'forbidden'
         ? 'この控えは、お受け取りになったご本人のLINEでのみ開けます。'
+        : data.error === 'expired'
+        ? '控えを開ける期間（' + (data.days || 7) + '日間）が過ぎたため、表示できません。お手元のスマホに保存した控えをご覧ください。'
         : '控えを開けませんでした。お手数ですが医院までお問い合わせください。');
       return;
     }
     document.getElementById('title').textContent = data.title + '（' + data.date.replace(/-/g, '/') + '）';
+    if (data.until) {
+      var u = data.until.split('-');
+      document.querySelector('.hint').textContent = 'この画面を開けるのは' + Number(u[1]) + '月' + Number(u[2]) + '日までです。それまでに保存してください。保存がうまくいかないときは、画面を長押しして画像を保存するか、スクリーンショットで残してください。';
+    }
     var bytes = b64ToBytes(data.b64);
     var box = document.getElementById('pages');
     if (data.mime === 'application/pdf') {
